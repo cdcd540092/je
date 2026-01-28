@@ -6,6 +6,9 @@ export default defineConfig(({ mode }) => {
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, (process as any).cwd(), '');
   return {
+    // CRITICAL: Set base to './' so assets are loaded relatively. 
+    // This fixes the 404 errors when deployed to GitHub Pages subdirectories.
+    base: './',
     plugins: [react()],
     define: {
       // Polyfill process.env for the existing code
