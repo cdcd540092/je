@@ -1,0 +1,8 @@
+{
+  "name": "Smart Glasses UVC Interface",
+  "description": "A WebRTC interface designed to connect with UVC-compliant smart glasses on Android via the browser.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
