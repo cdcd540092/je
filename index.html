@@ -23,7 +23,7 @@
         border-radius: 4px;
       }
     </style>
-  <script type="importmap">
+<script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.4",
@@ -38,8 +38,7 @@
 </head>
   <body>
     <div id="root"></div>
-    <!-- Removed importmap to avoid conflicts with Vite bundler -->
-    <!-- Using /index.tsx is fine for dev, Vite will transform it. -->
+    <!-- Cleaned up: No importmap here. Let Vite handle all dependencies. -->
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

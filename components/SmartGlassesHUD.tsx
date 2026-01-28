@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { analyzeImage } from '../services/geminiService';
 
 interface VideoDevice {
   deviceId: string;
@@ -8,12 +7,9 @@ interface VideoDevice {
 
 const SmartGlassesHUD: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [devices, setDevices] = useState<VideoDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [analysis, setAnalysis] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Initialize and list devices
@@ -85,41 +81,8 @@ const SmartGlassesHUD: React.FC = () => {
     }
   }, [selectedDeviceId, startStream]);
 
-  const handleCaptureAndAnalyze = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    setIsAnalyzing(true);
-    setAnalysis(null);
-
-    try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-        
-        // Analyze with Gemini
-        const result = await analyzeImage(base64Image, "Briefly describe what is in this camera frame. Focus on objects, text, or potential hazards.");
-        setAnalysis(result.text);
-      }
-    } catch (err) {
-      console.error("Analysis failed", err);
-      setError("AI MODULE ERROR: Analysis failed.");
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
   return (
     <div className="h-full flex flex-col relative">
-      {/* Hidden Canvas for capture */}
-      <canvas ref={canvasRef} className="hidden" />
-
       {/* Main Viewport */}
       <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
         {!isStreaming && !error && (
@@ -172,23 +135,6 @@ const SmartGlassesHUD: React.FC = () => {
             <div className="h-[1px] w-full bg-cyan-400/50 absolute"></div>
             <div className="w-2 h-2 border border-cyan-400 rounded-full bg-transparent z-10"></div>
           </div>
-          
-          {/* Analysis Result Pop-up */}
-          {analysis && (
-            <div className="absolute top-1/2 left-4 right-4 mt-8 bg-black/80 border border-cyan-500/50 p-3 rounded backdrop-blur-sm shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300">
-               <div className="text-[10px] uppercase text-cyan-500 mb-1 border-b border-cyan-900 pb-1 flex justify-between">
-                 <span>Analysis Report</span>
-                 <span>CONFIDENCE: 98.2%</span>
-               </div>
-               <p className="text-cyan-100 text-sm leading-relaxed">{analysis}</p>
-               <button 
-                 onClick={() => setAnalysis(null)}
-                 className="absolute -top-2 -right-2 bg-cyan-900 text-cyan-200 rounded-full w-5 h-5 flex items-center justify-center text-xs border border-cyan-500 pointer-events-auto"
-               >
-                 ✕
-               </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -213,44 +159,18 @@ const SmartGlassesHUD: React.FC = () => {
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
            <button 
              onClick={startStream}
              className="border border-cyan-700 text-cyan-500 hover:bg-cyan-900/30 py-3 rounded text-xs font-bold uppercase tracking-wider transition-colors"
            >
-             Refocus Feed
-           </button>
-           
-           <button
-             disabled={isAnalyzing || !isStreaming}
-             onClick={handleCaptureAndAnalyze}
-             className={`
-               relative overflow-hidden
-               flex items-center justify-center gap-2
-               py-3 rounded text-xs font-bold uppercase tracking-wider
-               transition-all duration-300
-               ${isAnalyzing 
-                 ? 'bg-cyan-900/50 text-cyan-600 cursor-not-allowed border border-cyan-900' 
-                 : 'bg-cyan-600 text-black hover:bg-cyan-400 border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]'}
-             `}
-           >
-             {isAnalyzing ? (
-               <>
-                 <span className="animate-spin text-lg">⟳</span>
-                 <span>Processing...</span>
-               </>
-             ) : (
-               <>
-                 <span className="text-lg">◉</span>
-                 <span>Analyze Visual</span>
-               </>
-             )}
+             Refresh Feed
            </button>
         </div>
 
         {/* Footer Info */}
         <div className="text-[9px] text-gray-600 text-center font-mono">
-          WEB-UVC BRIDGE v1.0.4 | JORJIN COMPATIBLE MODE
+          WEB-UVC BRIDGE v1.0.5 | CAMERA ONLY MODE
         </div>
       </div>
     </div>

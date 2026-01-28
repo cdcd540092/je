@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import SmartGlassesHUD from './components/SmartGlassesHUD';
 
 const App: React.FC = () => {
-  const [apiKey, setApiKey] = useState<string>(process.env.API_KEY || '');
-
   return (
     <div className="min-h-screen bg-black text-cyan-400 overflow-hidden relative">
       {/* Background Grid Effect */}
