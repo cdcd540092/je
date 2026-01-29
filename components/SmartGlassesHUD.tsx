@@ -13,38 +13,63 @@ const SmartGlassesHUD: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Initialize and list devices
-  useEffect(() => {
-    const getDevices = async () => {
-      try {
-        // Request initial permission to expose labels
-        // On Mobile Chrome, this is crucial
+  // Function to fetch and update devices
+  const fetchDevices = useCallback(async (autoSelect: boolean = false) => {
+    try {
+      // Check permissions implicitly by seeing if labels exist
+      const tempDevices = await navigator.mediaDevices.enumerateDevices();
+      const hasLabels = tempDevices.some(d => d.label && d.label.length > 0);
+
+      if (!hasLabels) {
+        // Request initial permission if missing
         await navigator.mediaDevices.getUserMedia({ video: true });
-        
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        const videoInputs = allDevices
-          .filter(device => device.kind === 'videoinput')
-          .map(device => ({
-            deviceId: device.deviceId,
-            label: device.label || `Camera ${device.deviceId.slice(0, 5)}...`
-          }));
-
-        setDevices(videoInputs);
-
-        if (videoInputs.length > 0) {
-          // Default to the last device (usually external USB/Glasses on Android)
-          setSelectedDeviceId(videoInputs[videoInputs.length - 1].deviceId);
-        } else {
-          setError("NO CAMERA DETECTED. Connect Glasses via OTG.");
-        }
-      } catch (err) {
-        console.error("Error listing devices:", err);
-        setError("PERMISSION DENIED. Please allow camera access in browser settings.");
       }
+
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = allDevices
+        .filter(device => device.kind === 'videoinput')
+        .map(device => ({
+          deviceId: device.deviceId,
+          label: device.label || `Camera ${device.deviceId.slice(0, 5)}...`
+        }));
+
+      setDevices(videoInputs);
+
+      // Auto-select logic:
+      // If we are asking to autoSelect (e.g. after plug in) OR no device is currently selected
+      if (videoInputs.length > 0) {
+        if (autoSelect || !selectedDeviceId) {
+           // Default to the last device (usually external USB/Glasses on Android)
+           const targetId = videoInputs[videoInputs.length - 1].deviceId;
+           // Only update if different to avoid stream flicker
+           if (targetId !== selectedDeviceId) {
+             setSelectedDeviceId(targetId);
+           }
+        }
+      } else {
+        setError("NO CAMERA DETECTED. Connect Glasses via OTG.");
+      }
+    } catch (err) {
+      console.error("Error listing devices:", err);
+      setError("PERMISSION DENIED. Please allow camera access in browser settings.");
+    }
+  }, [selectedDeviceId]);
+
+  // Initial load and Hot-plug listener
+  useEffect(() => {
+    fetchDevices(false);
+
+    const handleDeviceChange = () => {
+      console.log("Device change detected (Hot-plug), refreshing...");
+      // When devices change (plug/unplug), force auto-select
+      fetchDevices(true);
     };
 
-    getDevices();
-  }, []);
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [fetchDevices]);
 
   // Handle stream start/stop
   const startStream = useCallback(async () => {
@@ -158,6 +183,7 @@ const SmartGlassesHUD: React.FC = () => {
           ref={videoRef}
           autoPlay
           playsInline
+          muted
           className={`max-w-full max-h-full object-contain ${isStreaming ? 'opacity-100' : 'opacity-0'}`}
           style={{ transform: 'scaleX(1)' }} // Usually standard for external cams
         />
