@@ -11,12 +11,14 @@ const SmartGlassesHUD: React.FC = () => {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Initialize and list devices
   useEffect(() => {
     const getDevices = async () => {
       try {
         // Request initial permission to expose labels
+        // On Mobile Chrome, this is crucial
         await navigator.mediaDevices.getUserMedia({ video: true });
         
         const allDevices = await navigator.mediaDevices.enumerateDevices();
@@ -29,16 +31,15 @@ const SmartGlassesHUD: React.FC = () => {
 
         setDevices(videoInputs);
 
-        // Attempt to auto-select the "back" camera or an external USB one if identifiable
-        // Smart glasses often appear as external USB cameras.
         if (videoInputs.length > 0) {
-          // Heuristic: On Android, external cameras might appear last or have specific names
-          // For now, default to the last one found as it's often the external/USB one added
+          // Default to the last device (usually external USB/Glasses on Android)
           setSelectedDeviceId(videoInputs[videoInputs.length - 1].deviceId);
+        } else {
+          setError("NO CAMERA DETECTED. Connect Glasses via OTG.");
         }
       } catch (err) {
         console.error("Error listing devices:", err);
-        setError("PERMISSION DENIED: Could not access camera system.");
+        setError("PERMISSION DENIED. Please allow camera access in browser settings.");
       }
     };
 
@@ -50,16 +51,21 @@ const SmartGlassesHUD: React.FC = () => {
     if (!selectedDeviceId) return;
 
     try {
+      // Stop previous tracks
       if (videoRef.current && videoRef.current.srcObject) {
         const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
         tracks.forEach(track => track.stop());
       }
 
+      console.log(`Attempting to stream from: ${selectedDeviceId}`);
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: { exact: selectedDeviceId },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          // UVC glasses often support 720p (1280x720) best. 
+          // 1080p can cause bandwidth issues on some USB-C/OTG adapters.
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         }
       });
 
@@ -68,9 +74,15 @@ const SmartGlassesHUD: React.FC = () => {
         setIsStreaming(true);
         setError(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Stream Error:", err);
-      setError("CONNECTION FAILED: UVC Device not accessible or busy.");
+      if (err.name === 'NotReadableError') {
+        setError("DEVICE BUSY: Camera is used by another app or disconnected.");
+      } else if (err.name === 'OverconstrainedError') {
+        setError("FORMAT ERROR: Resolution not supported by glasses.");
+      } else {
+        setError(`CONNECTION FAILED: ${err.message || 'Unknown error'}`);
+      }
       setIsStreaming(false);
     }
   }, [selectedDeviceId]);
@@ -81,30 +93,60 @@ const SmartGlassesHUD: React.FC = () => {
     }
   }, [selectedDeviceId, startStream]);
 
+  // Cycle to next camera (easier for mobile users than dropdown)
+  const cycleCamera = () => {
+    if (devices.length <= 1) return;
+    const currentIndex = devices.findIndex(d => d.deviceId === selectedDeviceId);
+    const nextIndex = (currentIndex + 1) % devices.length;
+    setSelectedDeviceId(devices[nextIndex].deviceId);
+  };
+
   return (
-    <div className="h-full flex flex-col relative">
+    <div className="h-full flex flex-col relative w-full touch-none">
+      {/* Help Modal */}
+      {showHelp && (
+        <div className="absolute inset-0 z-[60] bg-black/95 flex items-center justify-center p-6 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-cyan-500/50 rounded-lg p-6 max-w-sm w-full shadow-[0_0_30px_rgba(6,182,212,0.2)]">
+            <h3 className="text-cyan-400 text-lg font-bold mb-4 tracking-wider border-b border-cyan-900 pb-2">CONNECTION GUIDE</h3>
+            <ol className="space-y-3 text-sm text-gray-300 font-mono list-decimal pl-4">
+              <li>Connect glasses to phone USB-C port.</li>
+              <li>Wait for Android pop-up asking to open browser/app.</li>
+              <li>If asked, Allow <b>Camera Access</b> permissions.</li>
+              <li>If screen is black, tap <b>REFRESH FEED</b>.</li>
+              <li>If wrong camera, tap <b>CYCLE CAM</b>.</li>
+            </ol>
+            <button 
+              onClick={() => setShowHelp(false)}
+              className="mt-6 w-full py-3 bg-cyan-700 hover:bg-cyan-600 text-white font-bold rounded uppercase tracking-widest transition-colors"
+            >
+              Close Guide
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Viewport */}
       <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
         {!isStreaming && !error && (
-          <div className="text-cyan-800 animate-pulse text-sm">INITIALIZING OPTICAL SENSORS...</div>
+          <div className="text-cyan-800 animate-pulse text-sm font-mono">INITIALIZING OPTICAL SENSORS...</div>
         )}
         
         {error && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 p-6 text-center">
-            <div className="border border-red-600 p-4 rounded bg-red-900/20 max-w-sm">
-              <h3 className="text-red-500 font-bold mb-2">SYSTEM ERROR</h3>
-              <p className="text-red-300 text-sm mb-4">{error}</p>
-              <div className="text-xs text-gray-400 text-left space-y-2">
-                <p>Troubleshooting for UVC/Smart Glasses:</p>
-                <ul className="list-disc pl-4">
-                  <li>Ensure OTG is enabled on your Android settings.</li>
-                  <li>Reconnect the USB-C cable.</li>
-                  <li>Browser may require a refresh to detect new USB devices.</li>
+            <div className="border border-red-600 p-4 rounded bg-red-900/20 max-w-sm w-full shadow-[0_0_20px_rgba(220,38,38,0.5)]">
+              <h3 className="text-red-500 font-bold mb-2 tracking-widest">SYSTEM ERROR</h3>
+              <p className="text-red-300 text-sm mb-4 font-mono">{error}</p>
+              <div className="text-xs text-gray-400 text-left space-y-2 border-t border-red-900/50 pt-2">
+                <p>Troubleshooting:</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Check USB-C/OTG connection.</li>
+                  <li>Close other camera apps.</li>
+                  <li>Replug the glasses.</li>
                 </ul>
               </div>
               <button 
                 onClick={() => window.location.reload()}
-                className="mt-4 px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-xs font-mono uppercase rounded w-full"
+                className="mt-4 px-4 py-3 bg-red-700 hover:bg-red-600 text-white text-xs font-bold font-mono uppercase rounded w-full active:scale-95 transition-transform"
               >
                 Reboot System
               </button>
@@ -116,63 +158,83 @@ const SmartGlassesHUD: React.FC = () => {
           ref={videoRef}
           autoPlay
           playsInline
-          muted
           className={`max-w-full max-h-full object-contain ${isStreaming ? 'opacity-100' : 'opacity-0'}`}
-          style={{ transform: 'scaleX(1)' }} // Assuming rear/external cam, no mirror needed usually
+          style={{ transform: 'scaleX(1)' }} // Usually standard for external cams
         />
 
-        {/* HUD Overlay Elements */}
+        {/* HUD Overlay */}
         <div className="absolute inset-0 pointer-events-none border-[1px] border-cyan-500/30 m-2 rounded-lg">
+          {/* Top Right Help Button (Clickable) */}
+          <div className="absolute top-4 right-4 pointer-events-auto z-40">
+            <button 
+              onClick={() => setShowHelp(true)}
+              className="w-8 h-8 rounded-full border border-cyan-500 text-cyan-500 flex items-center justify-center hover:bg-cyan-900/50 transition-colors font-mono font-bold"
+            >
+              ?
+            </button>
+          </div>
+
           {/* Corners */}
           <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-cyan-500"></div>
           <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-cyan-500"></div>
           <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-cyan-500"></div>
           <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-cyan-500"></div>
 
-          {/* Crosshair */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center opacity-50">
-            <div className="w-[1px] h-full bg-cyan-400/50"></div>
-            <div className="h-[1px] w-full bg-cyan-400/50 absolute"></div>
-            <div className="w-2 h-2 border border-cyan-400 rounded-full bg-transparent z-10"></div>
+          {/* Center Target */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 flex items-center justify-center opacity-40">
+            <div className="w-[1px] h-full bg-cyan-400"></div>
+            <div className="h-[1px] w-full bg-cyan-400 absolute"></div>
+            <div className="w-4 h-4 border border-cyan-400 rounded-full bg-transparent z-10 box-border"></div>
           </div>
         </div>
       </div>
 
-      {/* Controls Bar */}
-      <div className="bg-gray-900 border-t border-cyan-900 p-4 space-y-4 z-20">
-        
-        {/* Device Selector */}
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-cyan-600 uppercase tracking-widest">Input Source (UVC)</label>
+      {/* Controls Bar - Mobile Optimized */}
+      <div className="bg-gray-900 border-t border-cyan-900 p-4 z-20 shrink-0 safe-pb">
+        <div className="flex flex-row gap-3 items-center">
+          
+          {/* Main Action Button */}
+          <button 
+            onClick={startStream}
+            className="flex-1 bg-cyan-900/40 border border-cyan-600 text-cyan-400 py-3 px-2 rounded hover:bg-cyan-800/50 active:bg-cyan-700 transition-colors text-xs font-bold uppercase tracking-wider h-12 flex items-center justify-center"
+          >
+            Refresh Feed
+          </button>
+
+          {/* Cycle Camera Button (Better for mobile) */}
+          <button 
+             onClick={cycleCamera}
+             className="flex-1 bg-gray-800 border border-gray-600 text-cyan-200 py-3 px-2 rounded hover:bg-gray-700 active:bg-gray-600 transition-colors text-xs font-bold uppercase tracking-wider h-12 flex items-col justify-center items-center gap-1"
+           >
+             <span className="text-[9px] text-gray-400 block">CAM:</span>
+             <span className="truncate max-w-[80px]">
+               {devices.find(d => d.deviceId === selectedDeviceId)?.label.slice(0, 8) || 'AUTO'}
+             </span>
+             <span className="text-cyan-500 ml-1">↻</span>
+           </button>
+        </div>
+
+        {/* Device Select (Hidden on very small screens if needed, but kept for precision) */}
+        <div className="mt-3">
           <select 
             value={selectedDeviceId}
             onChange={(e) => setSelectedDeviceId(e.target.value)}
-            className="bg-black border border-cyan-800 text-cyan-400 text-xs p-2 rounded focus:outline-none focus:border-cyan-500 font-mono"
+            className="w-full bg-black border border-cyan-900 text-gray-400 text-[10px] p-2 rounded focus:outline-none font-mono"
           >
             {devices.map(device => (
               <option key={device.deviceId} value={device.deviceId}>
                 {device.label.toUpperCase()}
               </option>
             ))}
-            {devices.length === 0 && <option>SCANNING FOR DEVICES...</option>}
           </select>
         </div>
-
-        {/* Action Buttons */}
-        <div className="grid grid-cols-1 gap-3">
-           <button 
-             onClick={startStream}
-             className="border border-cyan-700 text-cyan-500 hover:bg-cyan-900/30 py-3 rounded text-xs font-bold uppercase tracking-wider transition-colors"
-           >
-             Refresh Feed
-           </button>
-        </div>
-
-        {/* Footer Info */}
-        <div className="text-[9px] text-gray-600 text-center font-mono">
-          WEB-UVC BRIDGE v1.0.5 | CAMERA ONLY MODE
-        </div>
       </div>
+      
+      <style>{`
+        .safe-pb {
+          padding-bottom: env(safe-area-inset-bottom, 16px);
+        }
+      `}</style>
     </div>
   );
 };
